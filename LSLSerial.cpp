@@ -37,7 +37,8 @@ int iLslFrameBoarderSize;
 uint32_t ui32FrameBorder;
 
 float fLslChannels[MAX_CHANNELS];
-int iRequestedPort = -1;;
+int iRequestedPort = -1;
+int iRequestedRate = -1;
 
 int iLslChannelCount;
 SerialPort Serial;
@@ -74,6 +75,12 @@ int main(int argc, char* argv[])
     }
     catch (std::invalid_argument e) {};
 
+    try {
+        if (std::stoi(cmd.getArg("-b")) > -1) { iRequestedRate = std::stoi(cmd.getArg("-b")); };
+    }
+    catch (std::invalid_argument e) {};
+
+
 //    if (cmd.has("-fb16")) iLslFrameBoarderSize = 2;
 //    if (cmd.has("-fb24")) iLslFrameBoarderSize = 3;
 //    if (cmd.has("-fb32")) iLslFrameBoarderSize = 4;
@@ -96,6 +103,8 @@ int main(int argc, char* argv[])
     if (strLslName == "") strOutMissing += "-streamname \"<Name>\"\r\n";
     if (strLslType == "") strOutMissing += "-streamtype \"<Type>\"\r\n";
     if (iLslFrameBoarderSize == 0) strOutMissing += "-fb<8/16/24/32> <FrameBoarder as Decimal>\r\n";
+    if (iRequestedPort < 0) strOutMissing += "-s \"<PortNum>\"\r\n";
+    if (iRequestedRate < 0) strOutMissing += "-b \"<Baud Rate>\"\r\n";
 
     std::string strDataType;
     printf_s("LSL Stream Info:\r\n");
@@ -111,7 +120,7 @@ int main(int argc, char* argv[])
     }; // switch CT
     printf_s("HDR  %7s     %1i (%8X)\r\n", strDataType.c_str(), iLslFrameBoarderSize, ui32FrameBorder);
     
-    for (int n = 0; n < channels.size(); n++) {
+    for (int n = 0; n < (int)channels.size(); n++) {
         switch (channels[n].ctChannelType) {
         case CT::CT_INT8:strDataType = "int  8"; break;
         case CT::CT_INT16:strDataType = "int 16"; break;
@@ -140,28 +149,40 @@ int main(int argc, char* argv[])
     if (iRequestedPort > -1) { printf("COM%i:\r\n", iRequestedPort); }
     else { printf("<none>\r\n"); };
 
-    if (strOutMissing.size()>0) { printf("Missing Parameters:\r\n%s\r\n", strOutMissing.c_str()); return; }
+    if (strOutMissing.size()>0) { printf("Missing Parameters:\r\n%s\r\n", strOutMissing.c_str()); return 0; }
+    bool bSuccess;
+    bSuccess = Serial.begin(iRequestedPort, iRequestedRate);
+
     // make a new stream_info (nchannelsch) and open an outlet with it
     //lsl::stream_info info(argc > 1 ? argv[1] : "SimpleStream", "EEG", nchannels);
-    if (channels.size() > MAX_CHANNELS) { printf("To many Channels Requestet, limit is %i channels", MAX_CHANNELS); return; }
-    lsl::stream_info info("StreamName","StreamType",channels.size(),lsl::IRREGULAR_RATE,lsl::cf_float32);
+    if (channels.size() > MAX_CHANNELS) { printf("To many Channels Requestet, limit is %i channels", MAX_CHANNELS); return 0; }
+    lsl::stream_info info(strLslName,strLslType,channels.size(),lsl::IRREGULAR_RATE,lsl::cf_float32);
     lsl::stream_outlet outlet(info);
 
-    std::string strTest;
-    bool bTest;
-    int  iTest;
-    cmd.init(argc, argv);
-    bTest = cmd.has("-c");
-    bTest = cmd.has("-s");
-    strTest = cmd.getArg("-c");
-    strTest = cmd.getArg("-s");
-    strTest = cmd.getArg("-testdec");
-    iTest = std::stoi(strTest);
-    strTest = cmd.getArg("-testhex");
-    iTest = std::stoi(strTest);
-    strTest = cmd.getArg("-testhex2");
-    iTest = std::stoi(strTest);
-    std::cout << "Hello World!\n";
+    while (true) {
+        bSuccess = Serial.seekIntro(ui32FrameBorder, iLslFrameBoarderSize);
+        if (bSuccess) {
+            for (int n = 0; n < channels.size(); n++) {
+                switch (channels[n].ctChannelType) {
+                case CT::CT_INT8:   fLslChannels[n] = (float)Serial.readInt(1); break;
+                case CT::CT_INT16:  fLslChannels[n] = (float)Serial.readInt(2); break;
+                case CT::CT_INT24:  fLslChannels[n] = (float)Serial.readInt(3); break;
+                case CT::CT_INT32:  fLslChannels[n] = (float)Serial.readInt(4); break;
+                case CT::CT_UINT8:  fLslChannels[n] = (float)Serial.readUInt(1); break;
+                case CT::CT_UINT16: fLslChannels[n] = (float)Serial.readUInt(2); break;
+                case CT::CT_UINT24: fLslChannels[n] = (float)Serial.readUInt(3); break;
+                case CT::CT_UINT32: fLslChannels[n] = (float)Serial.readUInt(4); break;
+
+                }; // switch ctChannelType
+            };// for n
+            outlet.push_sample(fLslChannels);
+        }; // if bSuccess
+    }; // while true
+
+
+
+    //std::cout << "Hello World!\n";
+    return 0;
 }
 
 // Programm ausführen: STRG+F5 oder Menüeintrag "Debuggen" > "Starten ohne Debuggen starten"

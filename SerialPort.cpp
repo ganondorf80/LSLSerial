@@ -61,6 +61,59 @@ int  SerialPort::read(bool bBlocking = false) {
 	return (int)(unsigned char)ucBuffer[0];
 };
 
+
+bool SerialPort::seekIntro(uint32_t ui32Intro, int iIntroSize) {
+	uint32_t ui32Buffer = 0x00;
+	int iInput;
+	while (ui32Intro != ui32Buffer) {
+		iInput = read();
+		if (iInput < 0) return false;
+		ui32Buffer = (ui32Buffer << 8) | (uint32_t)iInput;
+		switch (iIntroSize) {
+		case 1: ui32Buffer = ui32Buffer & 0x000000FF; break;
+		case 2: ui32Buffer = ui32Buffer & 0x0000FFFF; break;
+		case 3: ui32Buffer = ui32Buffer & 0x00FFFFFF; break;
+		case 4: ui32Buffer = ui32Buffer & 0xFFFFFFFF; break;
+		}; // switch iIntroSize
+	}; // while
+	return true;
+};
+
+
+int32_t SerialPort::readUInt(int iSize) {
+	if (iSize > 4) return 0;
+	if (iSize < 1) return 0;
+	int32_t   i32retValue = 0x00;
+	uint32_t ui32retValue = 0x00;
+	int iInput;
+	for (int n = 0; n < iSize; n++) {
+		iInput = read();
+		if (iInput < 0) return 0;
+		ui32retValue = ui32retValue >> 8;
+		ui32retValue = ui32retValue & 0x00FFFFFF;
+		ui32retValue = ui32retValue | (uint32_t)(iInput << 24);
+	};
+	ui32retValue = ui32retValue >> (4 - iSize) * 8;
+	i32retValue = ui32retValue;//reinterpret_cast<int32_t>(ui32retValue);
+	return ui32retValue;
+};
+
+int32_t SerialPort::readInt(int iSize) {
+	uint32_t ui32t = readUInt(iSize);
+	uint32_t msbSign = 0x80 << ((iSize - 1) * 8);	// Vorzeichenbit/(Wert) ermitteln
+	int32_t  i32t = ui32t;
+	if (ui32t >= msbSign) {
+		switch (iSize) {
+		case 1: i32t = ui32t | 0xFFFFFF80; break;
+		case 2: i32t = ui32t | 0xFFFF8000; break;
+		case 3: i32t = ui32t | 0xFF800000; break;
+		case 4: i32t = ui32t | 0x80000000; break;
+		}
+	}; // if Sign bit is set
+	return i32t;
+};
+
+
 bool SerialPort::write(unsigned char ucChar) {
 	unsigned char ucBuffer[2];
 	DWORD dwReadCount;
